@@ -1,0 +1,23 @@
+# 音声データと学習済みモデルは公開しない（声は個人情報に近いデータのため）
+recordings/
+dataset/
+outputs/
+*.wav
+*.mp3
+*.safetensors
+*.pth
+tts_history.json
+tts_dict.json
+
+# Style-Bert-VITS2 本体・モデル資産
+style-bert-vits2/
+model_assets/
+bert/
+slm/
+
+# Python
+__pycache__/
+venv/
+sbv2-venv/
+*.log
+.DS_Store

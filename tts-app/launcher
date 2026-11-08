@@ -1,0 +1,4 @@
+#!/bin/zsh
+cd "$HOME/my-voice-tts" || exit 1
+mkdir -p logs
+exec ./sbv2-venv/bin/python -u tts_app.py >> logs/tts_app.log 2>&1

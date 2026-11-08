@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<title>TTSボイス収録</title>
+<style>
+ body{font-family:-apple-system,"Hiragino Kaku Gothic ProN",sans-serif;margin:0;background:#111418;color:#e8eaed}
+ header{padding:12px 18px;background:#1b1f26;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+ header h1{font-size:17px;margin:0}
+ .prog{flex:1;min-width:180px}
+ .bar{height:10px;background:#333;border-radius:5px;overflow:hidden}
+ .bar>i{display:block;height:100%;background:#4caf7d;width:0%}
+ main{padding:18px}
+ .num{font-size:15px;color:#9fb4c8}
+ .cat{display:inline-block;background:#26303d;color:#bcd;border-radius:10px;padding:2px 10px;font-size:12px;margin-left:8px}
+ .text{font-size:30px;line-height:1.5;margin:14px 0 6px;min-height:96px}
+ .hint{color:#f0c674;font-size:14px;min-height:20px}
+ .meter{height:14px;background:#222;border-radius:7px;overflow:hidden;margin:12px 0}
+ .meter>i{display:block;height:100%;background:#7dc383;width:0%}
+ .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+ button{font-size:16px;padding:12px 20px;border-radius:10px;border:0;cursor:pointer;background:#2c3542;color:#e8eaed}
+ button.rec{background:#c62828;color:#fff;font-weight:700;min-width:170px}
+ button.rec.on{background:#ff5252}
+ button:disabled{opacity:.4}
+ select,input{background:#1b1f26;color:#e8eaed;border:1px solid #3a4353;border-radius:6px;padding:6px}
+ .info{color:#9fb4c8;font-size:13px}
+ .warn{color:#ff8a80}
+ .grid{display:flex;flex-wrap:wrap;gap:4px;max-height:180px;overflow:auto;margin-top:10px}
+ .grid button{font-size:11px;padding:5px 0;width:44px;border-radius:6px;background:#232a35}
+ .grid button.done{background:#2e5d43}
+ .grid button.warn{background:#7a4a1f}
+ .grid button.cur{outline:2px solid #f0c674}
+ label{font-size:13px;color:#9fb4c8}
+</style></head><body>
+<header>
+ <h1>🎙️ TTSボイス収録</h1>
+ <div class="prog"><div class="bar"><i id="bar"></i></div>
+ <div class="info" id="progText">-</div></div>
+ <button id="nextUnrec">次の未録音へ</button>
+</header>
+<main>
+ <div><span class="num" id="numLabel">-</span><span class="cat" id="catLabel"></span></div>
+ <div class="text" id="sentence">読み込み中…</div>
+ <div class="hint" id="hint"></div>
+ <div class="meter"><i id="level"></i></div>
+ <div class="row">
+   <button class="rec" id="recBtn">● 録音する</button> <span class="info" id="timer"></span>
+   <button id="playBtn">▶ 聞く</button>
+   <button id="delBtn">この文を消す</button>
+   <button id="prevBtn">← 前へ</button>
+   <button id="nextBtn">次へ →</button>
+   <span class="info" id="recInfo"></span>
+ </div>
+ <div class="row">
+   <label>マイク <select id="inDev"></select></label>
+   <label>再生先 <select id="outDev"></select></label>
+   <label>話者名 <input id="speaker" size="10"></label>
+   <label><input type="checkbox" id="autoPlay" checked> 録音したら自動で再生して聞く</label>
+ </div>
+ <div class="info">保存先: recordings/ に連番WAVで自動保存。台本対応表.csv と filelist.txt（Style-Bert-VITS2用）は録音のたびに自動更新されます。警告が出た文は下の番号がオレンジになります。</div>
+ <div class="row">
+   <input id="addText" size="52" placeholder="追加で話したい文を入力（例：自分の口癖や言い回し）">
+   <button id="addBtn">＋ 文を追加して録音する</button>
+ </div>
+ <div class="grid" id="grid"></div>
+</main>
+<script>
+let S=null, recording=false;
+const $=id=>document.getElementById(id);
+async function api(name,...a){return await window.pywebview.api[name](...a);}
+function render(){
+ if(!S)return;
+ const c=S.current;
+ $('numLabel').textContent = String(c.number).padStart(3,'0')+' / '+S.total+' ・ '+c.filename;
+ $('catLabel').textContent = c.category||'';
+ $('sentence').textContent = c.text;
+ $('hint').textContent = c.hint?('読み方: '+c.hint):'';
+ $('bar').style.width = (100*S.done/S.total)+'%';
+ $('progText').textContent = S.done+' / '+S.total+' 文 録音済み';
+ $('playBtn').disabled = !S.recorded[c.number];
+ $('delBtn').disabled = !S.recorded[c.number];
+ if(S.current_info){
+   let w = (S.current_info.warnings&&S.current_info.warnings.length)
+     ? ' <span class="warn">⚠ '+S.current_info.warnings.join(' / ')+'</span>' : '';
+   $('recInfo').innerHTML = '録音済み: '+S.current_info.duration+'秒 / ピーク '+S.current_info.peak_db+'dB / ノイズ '+S.current_info.noise_db+'dB'+w;
+ } else $('recInfo').textContent = '未録音';
+ const g=$('grid'); g.innerHTML='';
+ for(let n=1;n<=S.total;n++){
+   const b=document.createElement('button');
+   b.textContent=String(n).padStart(3,'0');
+   if(S.recorded[n])b.className='done';
+   if(S.warnings&&S.warnings[n]&&S.warnings[n].length)b.className='warn';
+   if(n===c.number)b.className+=' cur';
+   b.onclick=async()=>{S=await api('jump',n); render();};
+   g.appendChild(b);
+ }
+}
+async function init(){
+ const dev=await api('get_devices');
+ const fill=(sel,list,cur,deflabel)=>{
+   sel.innerHTML='<option value="">'+deflabel+'</option>';
+   list.forEach(d=>{const o=document.createElement('option');o.value=d.index;o.textContent=d.name;sel.appendChild(o);});
+   if(cur!==null&&cur!==undefined)sel.value=cur;
+ };
+ S=await api('get_state');
+ fill($('inDev'),dev.inputs,S.config.input_device,'（既定のマイク）');
+ fill($('outDev'),dev.outputs,S.config.output_device,'（既定の再生先）');
+ $('speaker').value=S.config.speaker_name||'myvoice';
+ $('autoPlay').checked=S.config.auto_play!==false;
+ render();
+ let polling=false;
+ setInterval(async()=>{
+   if(!window.pywebview||!window.pywebview.api||polling)return;
+   polling=true;
+   try{
+     const l=await api('get_level');
+     $('level').style.width=Math.min(100,l.level*100)+'%';
+     $('level').style.background=l.level>0.98?'#ff5252':(l.level>0.7?'#f0c674':'#7dc383');
+     $('timer').textContent=l.recording?('録音中 '+l.elapsed+'秒'):'';
+   }catch(e){}
+   polling=false;
+ },300);
+}
+let recBusy=false;
+$('recBtn').onclick=async()=>{
+ if(recBusy)return;
+ recBusy=true;$('recBtn').disabled=true;
+ try{
+  if(!recording){
+   const r=await api('start_recording');
+   if(!r.ok){alert('録音を開始できません: '+r.error);return;}
+   recording=true;$('recBtn').classList.add('on');$('recBtn').textContent='■ 止める';
+  }else{
+   const r=await api('stop_recording');
+   recording=false;$('recBtn').classList.remove('on');$('recBtn').textContent='● 録音する';
+   if(!r.ok){alert('保存できませんでした: '+r.error);return;}
+   S=r; render();
+   if($('autoPlay').checked){ await api('play_current'); }
+  }
+ }finally{ recBusy=false;$('recBtn').disabled=false; }
+};
+$('playBtn').onclick=async()=>{const r=await api('play_current'); if(!r.ok)alert(r.error);};
+$('delBtn').onclick=async()=>{if(confirm('この文の録音を消しますか？')){S=await api('delete_current');render();}};
+$('prevBtn').onclick=async()=>{S=await api('jump',Math.max(1,S.current.number-1));render();};
+$('nextBtn').onclick=async()=>{S=await api('jump',Math.min(S.total,S.current.number+1));render();};
+$('nextUnrec').onclick=async()=>{S=await api('jump_next_unrecorded');render();};
+$('inDev').onchange=async()=>{await api('set_config',{input_device:$('inDev').value===''?null:parseInt($('inDev').value)});};
+$('outDev').onchange=async()=>{await api('set_config',{output_device:$('outDev').value===''?null:parseInt($('outDev').value)});};
+$('speaker').onchange=async()=>{await api('set_config',{speaker_name:$('speaker').value||'myvoice'}); S=await api('get_state'); render();};
+$('autoPlay').onchange=async()=>{await api('set_config',{auto_play:$('autoPlay').checked});};
+$('addBtn').onclick=async()=>{const t=$('addText').value.trim(); if(!t){alert('文を入力してください');return;} const r=await api('add_sentence',t); if(!r.ok){alert(r.error);return;} $('addText').value=''; S=r; render();};
+window.addEventListener('pywebviewready',init);
+</script></body></html>

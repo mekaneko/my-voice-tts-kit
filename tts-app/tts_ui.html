@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>俺ボイスTTS</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, "Hiragino Sans", sans-serif; margin: 0; padding: 20px 24px; background: #1c1c1e; color: #f2f2f7; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  #status { font-size: 12px; color: #aeaeb2; margin-bottom: 12px; }
+  #status .ok { color: #30d158; }
+  #status .err { color: #ff453a; }
+  .tabbar { display: flex; gap: 8px; margin: 10px 0 16px; border-bottom: 1px solid #3a3a3c; padding-bottom: 10px; }
+  .tabbar button { background: #2c2c2e; color: #aeaeb2; font-size: 15px; padding: 8px 20px; border-radius: 8px; border: 1px solid #3a3a3c; cursor: pointer; }
+  .tabbar button.active { background: #0a84ff; color: #fff; border-color: #0a84ff; }
+  textarea { width: 100%; box-sizing: border-box; font-size: 16px; line-height: 1.6; padding: 10px; border-radius: 8px; border: 1px solid #3a3a3c; background: #2c2c2e; color: #f2f2f7; resize: vertical; }
+  .row { display: flex; gap: 10px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+  button { font-size: 15px; padding: 9px 18px; border-radius: 8px; border: none; cursor: pointer; background: #0a84ff; color: #fff; }
+  button.secondary { background: #48484a; }
+  button.small { font-size: 12px; padding: 5px 12px; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  #counter { font-size: 12px; color: #aeaeb2; margin-left: auto; }
+  audio { width: 100%; margin: 6px 0 2px; }
+  #applied { font-size: 12px; color: #aeaeb2; min-height: 16px; }
+  #msg { font-size: 13px; min-height: 18px; }
+  #msg.err { color: #ff453a; }
+  #msg.ok { color: #30d158; }
+  h2 { font-size: 15px; margin: 18px 0 8px; }
+  .note { font-size: 12px; color: #aeaeb2; margin-bottom: 10px; line-height: 1.5; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { padding: 6px 8px; border-bottom: 1px solid #3a3a3c; text-align: left; vertical-align: top; }
+  td.time { white-space: nowrap; color: #aeaeb2; font-size: 12px; width: 110px; }
+  td.histtext { word-break: break-all; }
+  td.ops { white-space: nowrap; width: 190px; text-align: right; }
+  td.ops button { margin-left: 4px; }
+  .addrow { display: flex; gap: 8px; margin-top: 10px; }
+  .addrow input { flex: 1; font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid #3a3a3c; background: #2c2c2e; color: #f2f2f7; }
+  .empty { font-size: 13px; color: #aeaeb2; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <h1>俺ボイスTTS（わんわん）</h1>
+  <div id="status">モデル読み込み中…</div>
+
+  <div class="tabbar">
+    <button id="tabBtnMain" class="active">メイン</button>
+    <button id="tabBtnDict">読み辞書</button>
+  </div>
+
+  <div id="tabMain">
+    <textarea id="text" rows="5" placeholder="読み上げたい文章を入力"></textarea>
+    <div class="row">
+      <button id="btnSynth">▶ 読み上げ</button>
+      <button id="btnMp3" class="secondary" disabled>MP3で保存</button>
+      <span id="counter">0 / 500</span>
+    </div>
+    <audio id="player" controls></audio>
+    <div id="applied"></div>
+    <div id="msg"></div>
+
+    <h2>履歴（最新50件）</h2>
+    <table>
+      <tbody id="histBody"></tbody>
+    </table>
+    <div id="histEmpty" class="empty">まだ履歴がありません</div>
+  </div>
+
+  <div id="tabDict" style="display:none">
+    <h2 style="margin-top:0">読み辞書</h2>
+    <div class="note">英単語や固有名詞の読みを固定できます。合成の前に「表記 → 読み」へ自動で置き換わります。追加・削除はその場で保存されます。</div>
+    <table>
+      <thead><tr><th>表記</th><th>読み（カタカナ）</th><th></th></tr></thead>
+      <tbody id="dictBody"></tbody>
+    </table>
+    <div class="addrow">
+      <input id="newWord" placeholder="表記（例: Muse）">
+      <input id="newReading" placeholder="読み（例: ミューズ）">
+      <button id="btnAdd" class="secondary">追加</button>
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let entries = [];
+  let history = [];
+  let lastWav = null;
+
+  function setMsg(text, cls) { const m = $("msg"); m.textContent = text; m.className = cls || ""; }
+
+  function showTab(which) {
+    $("tabMain").style.display = which === "main" ? "" : "none";
+    $("tabDict").style.display = which === "dict" ? "" : "none";
+    $("tabBtnMain").className = which === "main" ? "active" : "";
+    $("tabBtnDict").className = which === "dict" ? "active" : "";
+  }
+  $("tabBtnMain").onclick = () => showTab("main");
+  $("tabBtnDict").onclick = () => showTab("dict");
+
+  async function pollStatus() {
+    try {
+      const s = await pywebview.api.status();
+      if (s.ready) {
+        $("status").innerHTML = '準備OK ・ モデル: <span class="ok">' + s.model + '</span>（このMacの中だけで処理します）';
+        return;
+      }
+      if (s.error) {
+        $("status").innerHTML = '<span class="err">モデル読み込み失敗: ' + s.error + '</span>';
+        return;
+      }
+    } catch (e) { /* 起動直後はAPI未準備のことがある */ }
+    setTimeout(pollStatus, 800);
+  }
+
+  function renderHistory() {
+    const tb = $("histBody");
+    tb.innerHTML = "";
+    $("histEmpty").style.display = history.length ? "none" : "";
+    history.forEach((h) => {
+      const tr = document.createElement("tr");
+      const tdT = document.createElement("td"); tdT.className = "time"; tdT.textContent = h.time;
+      const tdX = document.createElement("td"); tdX.className = "histtext"; tdX.textContent = h.text;
+      const tdO = document.createElement("td"); tdO.className = "ops";
+      const bPlay = document.createElement("button"); bPlay.className = "secondary small"; bPlay.textContent = "再生";
+      bPlay.onclick = async () => {
+        const r = await pywebview.api.play_history(h.wav);
+        if (r.ok) { $("player").src = r.audio; $("player").play(); }
+        else setMsg(r.error, "err");
+      };
+      const bMp3 = document.createElement("button"); bMp3.className = "secondary small"; bMp3.textContent = "MP3";
+      bMp3.onclick = async () => {
+        const r = await pywebview.api.save_mp3(h.wav);
+        if (r.ok) setMsg("保存しました: " + r.path, "ok");
+        else if (r.error !== "キャンセルしました") setMsg(r.error, "err");
+      };
+      const bDel = document.createElement("button"); bDel.className = "secondary small"; bDel.textContent = "削除";
+      bDel.onclick = async () => {
+        const r = await pywebview.api.delete_history(h.wav);
+        history = r.entries || [];
+        renderHistory();
+      };
+      tdO.appendChild(bPlay); tdO.appendChild(bMp3); tdO.appendChild(bDel);
+      tr.appendChild(tdT); tr.appendChild(tdX); tr.appendChild(tdO);
+      tb.appendChild(tr);
+    });
+  }
+
+  function renderDict() {
+    const tb = $("dictBody");
+    tb.innerHTML = "";
+    entries.forEach((e, i) => {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td"); td1.textContent = e.word;
+      const td2 = document.createElement("td"); td2.textContent = e.reading;
+      const td3 = document.createElement("td"); td3.style.textAlign = "right";
+      const b = document.createElement("button"); b.className = "secondary small"; b.textContent = "削除";
+      b.onclick = async () => {
+        entries.splice(i, 1);
+        await pywebview.api.set_dict(entries);
+        renderDict();
+      };
+      td3.appendChild(b);
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+      tb.appendChild(tr);
+    });
+  }
+
+  $("text").addEventListener("input", () => {
+    $("counter").textContent = $("text").value.length + " / 500";
+  });
+
+  $("btnSynth").onclick = async () => {
+    const text = $("text").value;
+    setMsg("合成中…（CPU処理のため少し時間がかかります）", "");
+    $("btnSynth").disabled = true;
+    try {
+      const r = await pywebview.api.synthesize(text);
+      if (r.ok) {
+        $("player").src = r.audio;
+        $("player").play();
+        $("applied").textContent = "読み上げた文: " + r.applied + "（" + r.sec + "秒）";
+        $("btnMp3").disabled = false;
+        lastWav = r.entry.wav;
+        history.unshift(r.entry);
+        if (history.length > 50) history = history.slice(0, 50);
+        renderHistory();
+        setMsg("", "");
+      } else {
+        setMsg(r.error, "err");
+      }
+    } catch (e) {
+      setMsg("エラー: " + e, "err");
+    }
+    $("btnSynth").disabled = false;
+  };
+
+  $("btnMp3").onclick = async () => {
+    try {
+      const r = await pywebview.api.save_mp3(lastWav);
+      if (r.ok) setMsg("保存しました: " + r.path, "ok");
+      else if (r.error !== "キャンセルしました") setMsg(r.error, "err");
+    } catch (e) {
+      setMsg("エラー: " + e, "err");
+    }
+  };
+
+  $("btnAdd").onclick = async () => {
+    const w = $("newWord").value.trim();
+    const rd = $("newReading").value.trim();
+    if (!w || !rd) { setMsg("表記と読みの両方を入力してください", "err"); return; }
+    entries = entries.filter(e => e.word !== w);
+    entries.push({ word: w, reading: rd });
+    await pywebview.api.set_dict(entries);
+    $("newWord").value = ""; $("newReading").value = "";
+    renderDict();
+  };
+
+  window.addEventListener("pywebviewready", async () => {
+    pollStatus();
+    const d = await pywebview.api.get_dict();
+    entries = d.entries || [];
+    renderDict();
+    const h = await pywebview.api.get_history();
+    history = h.entries || [];
+    if (history.length) { $("btnMp3").disabled = false; lastWav = history[0].wav; }
+    renderHistory();
+  });
+</script>
+</body>
+</html>

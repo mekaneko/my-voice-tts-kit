@@ -1,0 +1,38 @@
+# config.yml の例（Style-Bert-VITS2 のプロジェクト直下に配置）
+# 話者名フォルダは Data/<話者名>/ 。ここでは話者名を yourvoice としている。
+bert_gen:
+  config_path: config.json
+  device: cpu
+  num_processes: 1
+  use_multi_device: false
+dataset_path: Data/yourvoice
+model_name: yourvoice
+preprocess_text:
+  clean: true
+  cleaned_path: ''
+  config_path: config.json
+  max_val_total: 12
+  train_path: train.list
+  transcription_path: esd.list
+  val_path: val.list
+  val_per_lang: 0
+resample:
+  in_dir: raw
+  out_dir: wavs
+  sampling_rate: 44100
+style_gen:
+  config_path: config.json
+  device: cpu
+  num_processes: 4
+train_ms:
+  config_path: config.json
+  env:
+    LOCAL_RANK: 0
+    MASTER_ADDR: localhost
+    MASTER_PORT: 10086
+    RANK: 0
+    WORLD_SIZE: 1
+  keep_ckpts: 1
+  model_dir: models
+  num_workers: 4
+  spec_cache: true
