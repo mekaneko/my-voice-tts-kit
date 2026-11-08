@@ -8,9 +8,9 @@ sys.path.insert(0, str(REPO))
 
 from style_bert_vits2.tts_model import TTSModel
 
-assets = REPO / "model_assets" / "wanwan"
+assets = REPO / "model_assets" / "myvoice"
 model = TTSModel(
-    model_path=assets / "wanwan_e9_s2000.safetensors",
+    model_path=assets / "myvoice_e9_s2000.safetensors",
     config_path=assets / "config.json",
     style_vec_path=assets / "style_vectors.npy",
     device="cpu",

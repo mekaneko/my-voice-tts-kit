@@ -27,7 +27,7 @@ python3.10 -m venv ../sbv2-venv
 
 ## 2. 台本を用意する
 
-- 450文前後が目安。日常会話・感情表現・朗読調をバランスよく
+- 数百文程度が目安。日常会話・感情表現・朗読調をバランスよく
 - 形式は recorder-app の `script_sample.csv`（number, filename, text, category, hint）
 - 感情文の hint には「会話の7割の強さで」など、演じ方の目安を書いておくと録音が安定します
 

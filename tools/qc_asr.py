@@ -2,7 +2,7 @@ import csv, difflib, pathlib, re, sys
 import mlx_whisper
 
 BASE = pathlib.Path(__file__).resolve().parent.parent  # ~/my-voice-tts
-WAV = BASE / "dataset/wanwan/wav"
+WAV = BASE / "dataset/myvoice/wav"
 rows = {int(r["number"]): r for r in csv.DictReader(open(BASE / "台本対応表.csv", encoding="utf-8"))}
 
 def norm(s):

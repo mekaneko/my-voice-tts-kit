@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>launcher</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.wanwan.voice-tts</string>
+	<string>local.myvoice.voice-tts</string>
 	<key>CFBundleName</key>
 	<string>俺ボイスTTS</string>
 	<key>CFBundlePackageType</key>

@@ -21,7 +21,7 @@ import webview
 
 BASE = Path(__file__).resolve().parent  # ~/my-voice-tts
 REPO = BASE / "style-bert-vits2"
-ASSETS = REPO / "model_assets" / "wanwan"
+ASSETS = REPO / "model_assets" / "myvoice"
 DICT_JSON = BASE / "tts_dict.json"
 HISTORY_JSON = BASE / "tts_history.json"
 OUT_DIR = BASE / "outputs"
@@ -55,7 +55,7 @@ def find_model():
     cands = sorted(ASSETS.glob("*.safetensors"), key=step_of)
     if cands:
         return cands[-1]
-    gdir = REPO / "Data" / "wanwan" / "models"
+    gdir = REPO / "Data" / "myvoice" / "models"
     gs = sorted(gdir.glob("G_*.pth"),
                 key=lambda p: int(re.search(r"(\d+)", p.stem).group(1)))
     return gs[-1] if gs else None
